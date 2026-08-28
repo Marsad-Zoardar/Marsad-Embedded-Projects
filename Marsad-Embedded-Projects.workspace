@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CodeLite_Workspace Name="Marsad-Embedded-Projects" Database="" Version="10000">
-  <Project Name="01-Heap-Allocated-Circular-Buffer" Path="01-Heap-Allocated-Circular-Buffer/01-Heap-Allocated-Circular-Buffer.project" Active="Yes"/>
-  <Project Name="02-Command-Terminal-History-Tracker" Path="02-Command-Terminal-History-Tracker/02-Command-Terminal-History-Tracker.project" Active="No"/>
+  <Project Name="01-Heap-Allocated-Circular-Buffer" Path="01-Heap-Allocated-Circular-Buffer/01-Heap-Allocated-Circular-Buffer.project" Active="No"/>
+  <Project Name="02-Command-Terminal-History-Tracker" Path="02-Command-Terminal-History-Tracker/02-Command-Terminal-History-Tracker.project" Active="Yes"/>
 </CodeLite_Workspace>
