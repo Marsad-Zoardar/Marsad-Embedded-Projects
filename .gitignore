@@ -1,0 +1,17 @@
+# Compiled object files
+*.o
+
+# Project 03 test executable
+03_Microcontroller_Control_Register_Simulator/motor_tests
+
+# Debugging files
+*.core
+core
+core.*
+
+# IDE-generated build directories
+**/Debug/
+**/Release/
+
+#CodeLite Temporary Files
+.codelite/
