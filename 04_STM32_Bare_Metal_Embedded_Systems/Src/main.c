@@ -35,6 +35,7 @@
 /* 1. Header Files*/
 #include <stdint.h>
 #include <stdbool.h>
+#include <stddef.h>
 #include "gpio_registers.h"
 #include "systick_registers.h"
 #include "dwt_registers.h"
@@ -42,9 +43,15 @@
 //Defined macros to turn on/off program parts
 #define MANUAL_DELAY 0
 #define DWT_DELAY 0
+#define DEBUG_CLOCK_CONFIG 0
+#define COMMUNICATION_TASK 0
 #define EXPERIMENT_9B 0
 #define EXPERIMENT_10E 0
-#define DEBUG_CLOCK_CONFIG 1
+#define EXPERIMENT_12A 0
+#define EXPERIMENT_12B_TEST1 0
+#define EXPERIMENT_12B_TEST2 0
+#define EXPERIMENT_12B_TEST3 0
+#define EXPERIMENT_12B_TEST4 1
 
 //Define buffer size for circular buffer
 #define UART_TX_BUFFER_SIZE 16u
@@ -71,13 +78,13 @@ static void setUSART2TxPin(void);
 static void setUSART2Baud(void);
 static void enableUSART2Tx(void);
 static void USART2_init(void);
+static bool USART2_tryTransmit(char character);
 static void togglePA5(void);
 static void delay(void);
 static void systickInit(void);
 void SysTick_Handler(void);
 static void dwtInit(void);
 static void dwtDelay(uint32_t ms);
-static bool USART2_tryTransmit(char character);
 
 //Sensor State - either measuring or idle
 typedef enum{
@@ -158,6 +165,10 @@ typedef struct{
 	uint8_t count;
 }UartTxBuffer;
 
+static bool UART_TX_Push(UartTxBuffer *buffer, uint8_t push_character);
+static bool UART_TX_Pop(UartTxBuffer *buffer, uint8_t *pop_character);
+static bool UART_TX_Peek(const UartTxBuffer *buffer, uint8_t *peek_character);
+static void UART_TX_Service(UartTxBuffer *buffer);
 static void sensor_update(uint32_t now_original, const SensorConfig *config_original,
 						SensorRuntime *runtime_original, SensorStatsOriginal *stats_original);
 #if EXPERIMENT_9B
@@ -175,7 +186,67 @@ int main(void)
 	setPA5Output();
 	systickInit();
 	USART2_init();
-	bool accepted = USART2_tryTransmit('A');
+
+#if EXPERIMENT_12B_TEST1
+	UartTxBuffer txBuffer = {0};
+	//Test 1 - FIFO Insertion: insert character and check indices
+	UART_TX_Push(&txBuffer, 'A');
+	UART_TX_Push(&txBuffer, 'B');
+	UART_TX_Push(&txBuffer, 'C');
+#endif
+
+#if EXPERIMENT_12B_TEST2
+	//Test 2 - buffer overflow: Fill 16 slots and reject the 17th character
+	UartTxBuffer txBuffer = {0};
+	for(uint8_t i = 0; i < UART_TX_BUFFER_SIZE; i++){
+			UART_TX_Push(&txBuffer,(uint8_t) ('A' + i));
+	}
+	volatile uint8_t headAfterPush1 = txBuffer.head;
+	volatile uint8_t tailAfterPush1 = txBuffer.tail;
+	volatile uint8_t countAfterPush1 = txBuffer.count;
+
+	bool overflowResult = UART_TX_Push(&txBuffer, 'Q');
+	volatile bool overflowResultViewer = overflowResult;
+#endif
+
+#if EXPERIMENT_12B_TEST3
+	//Test 3 - Wraparound: Pop 3 characters and insert Q, R, S
+	UartTxBuffer txBuffer = {0};
+	for(uint8_t i = 0; i < UART_TX_BUFFER_SIZE; i++){
+				UART_TX_Push(&txBuffer,(uint8_t) ('A' + i));
+	}
+	volatile uint8_t headAfterPush1 = txBuffer.head;
+	volatile uint8_t tailAfterPush1 = txBuffer.tail;
+	volatile uint8_t countAfterPush1 = txBuffer.count;
+
+	volatile uint8_t poppedCharacter = 0;
+		for(uint8_t j = 0; j < 3; j++){
+			UART_TX_Pop(&txBuffer, &poppedCharacter); //popping out 0, 1, 2 (A, B, C)
+		}
+	volatile uint8_t headAfterPop1 = txBuffer.head;
+	volatile uint8_t tailAfterPop1 = txBuffer.tail;
+	volatile uint8_t countAfterPop1 = txBuffer.count;
+
+	for(uint8_t k = 0; k < 3; k++){
+				UART_TX_Push(&txBuffer,(uint8_t) ('Q' + k));
+		}
+	volatile uint8_t headAfterPush2 = txBuffer.head;
+	volatile uint8_t tailAfterPush2 = txBuffer.tail;
+	volatile uint8_t countAfterPush2 = txBuffer.count;
+
+	uint8_t peekValue = 0;
+	bool tailValue = UART_TX_Peek(&txBuffer, &peekValue);
+	volatile uint8_t peekValueResult = peekValue;
+#endif
+
+	//Test 4 - Hardware Transmission: Service ABC and verify PuTTY and empty FIFO
+#if EXPERIMENT_12B_TEST4
+	UartTxBuffer txBuffer = {0};
+	// Test 4: Queue ABC for nonblocking USART2 transmission
+	UART_TX_Push(&txBuffer, 'A');
+	UART_TX_Push(&txBuffer, 'B');
+	UART_TX_Push(&txBuffer, 'C');
+#endif
 
 
 #if DEBUG_CLOCK_CONFIG
@@ -343,6 +414,7 @@ int main(void)
 						sensorStats_inline.executionSamples_inline++;
 #endif
 
+#if COMMUNICATION_TASK
 		//Check communication task
 		if(elapsedCommTime >= checkCommPeriod){
 			uint32_t commStartCycles = DWT_CYCCNT;
@@ -369,6 +441,7 @@ int main(void)
 
 
 		}
+#endif
 ///*************************************************************************************/
 		//Check LED Task
 		if(elapsedLEDTime >= checkLEDPeriod){
@@ -381,7 +454,6 @@ int main(void)
 			// Experiment 11 — Test B:
 			// Introduce controlled CPU blocking to measure
 			// its effect on sensor deadline compliance.
-			dwtDelay(10u);
 			//dwtDelay(10u); //disabled for experiment 10A
 			previousLEDTime += checkLEDPeriod;
 			if(LEDSchedulingDelay > LEDMaxSchedulingDelay){
@@ -398,7 +470,10 @@ int main(void)
 			}
 			gpioMeasurementCount++; //Count the total number of processor cycles it considered
 		}
-
+#if EXPERIMENT_12B_TEST4
+		//Transmit data
+		UART_TX_Service(&txBuffer);
+#endif
 	}
 
 }
@@ -463,11 +538,6 @@ static bool USART2_tryTransmit(char character){
 
 }
 
-//Circular buffer push
-static bool UART_TX_Push(UartTxBuffer *buffer, uint8_t character){
-
-}
-
 //USART2 initialization
 static void USART2_init(void){
 	enableUSART2Clock();
@@ -480,6 +550,73 @@ static void USART2_init(void){
 	setUSART2Baud();
 	enableUSART2Tx();
 }
+
+//Circular buffer push
+static bool UART_TX_Push(UartTxBuffer *buffer, uint8_t push_character){
+
+	if(buffer == NULL || buffer->count == UART_TX_BUFFER_SIZE){
+		return false;
+	}
+	buffer->data[buffer->head] = push_character;
+	buffer->head = (buffer->head + 1u) % UART_TX_BUFFER_SIZE;
+	buffer->count++;
+
+	return true;
+}
+
+//Circular buffer pop
+static bool UART_TX_Pop(UartTxBuffer *buffer, uint8_t *pop_character){
+
+	if(buffer == NULL || pop_character == NULL){
+			return false;
+	}
+
+	if(buffer->count == 0){
+		return false;
+	}
+
+	*pop_character = buffer->data[buffer->tail];
+	buffer->tail = (buffer->tail + 1u) % UART_TX_BUFFER_SIZE;
+	buffer->count--;
+
+	return true;
+
+}
+// Read the oldest queued byte without modifying the buffer.
+static bool UART_TX_Peek(const UartTxBuffer *buffer, uint8_t *peek_character){
+
+	if(buffer == NULL || peek_character == NULL){
+		return false;
+	}
+
+	if(buffer->count == 0){
+		return false;
+	}
+
+	*peek_character = buffer->data[buffer->tail];
+
+	return true;
+}
+//USART enqueue
+static void UART_TX_Service(UartTxBuffer *buffer){
+	//1. Peek at the oldest character in the buffer.
+	uint8_t peek = 0;
+	//2. If the buffer is empty, return immediately.
+	if(!UART_TX_Peek(buffer, &peek)){
+		return;
+	}
+	//3. Call USART2_tryTransmit() with the peeked character.
+	//4. If USART2 returns false, leave the character queued and return.
+	if(!USART2_tryTransmit((char)peek)){
+		return;
+	}
+	//5. If USART2 returns true, pop the character because the hardware has accepted it.
+
+	(void)UART_TX_Pop(buffer, &peek);
+
+
+}
+
 
 //Toggle GPIO output 5
 static void togglePA5(void){
