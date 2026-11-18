@@ -44,14 +44,16 @@
 #define MANUAL_DELAY 0
 #define DWT_DELAY 0
 #define DEBUG_CLOCK_CONFIG 0
-#define COMMUNICATION_TASK 0
+#define COMMUNICATION_TASK 1
 #define EXPERIMENT_9B 0
 #define EXPERIMENT_10E 0
 #define EXPERIMENT_12A 0
 #define EXPERIMENT_12B_TEST1 0
 #define EXPERIMENT_12B_TEST2 0
 #define EXPERIMENT_12B_TEST3 0
-#define EXPERIMENT_12B_TEST4 1
+#define EXPERIMENT_12B_TEST4 0
+#define EXPERIMENT_12C_TEST1 1
+#define EXPERIMENT_12C_TEST2 0
 
 //Define buffer size for circular buffer
 #define UART_TX_BUFFER_SIZE 16u
@@ -248,6 +250,10 @@ int main(void)
 	UART_TX_Push(&txBuffer, 'C');
 #endif
 
+#if EXPERIMENT_12C_TEST1 || EXPERIMENT_12C_TEST2
+	UartTxBuffer txBuffer = {0};
+	volatile uint32_t uartDroppedBytes = 0u;
+#endif
 
 #if DEBUG_CLOCK_CONFIG
 	debugClockConfig = RCC_CFGR;
@@ -426,6 +432,12 @@ int main(void)
 				commMaxSchedulingDelay = commSchedulingDelay;
 			}
 			communicationCount++;
+#if EXPERIMENT_12C_TEST1
+
+				if(!UART_TX_Push(&txBuffer, 'A')){
+					uartDroppedBytes++;
+				}
+#endif
 			previousCommunicationTime += checkCommPeriod;
 
 			uint32_t commEndCycles = DWT_CYCCNT;//DWT clock ends
@@ -474,6 +486,12 @@ int main(void)
 		//Transmit data
 		UART_TX_Service(&txBuffer);
 #endif
+
+#if EXPERIMENT_12C_TEST1
+		//Transmit the enqueued character 'A'
+		UART_TX_Service(&txBuffer);
+#endif
+
 	}
 
 }
