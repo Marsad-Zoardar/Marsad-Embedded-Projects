@@ -52,8 +52,15 @@
 #define EXPERIMENT_12B_TEST2 0
 #define EXPERIMENT_12B_TEST3 0
 #define EXPERIMENT_12B_TEST4 0
-#define EXPERIMENT_12C_TEST1 1
+#define EXPERIMENT_12C_TEST1 0
 #define EXPERIMENT_12C_TEST2 0
+#define EXPERIMENT_12D_TEST1 1
+#define EXPERIMENT_12D_TEST2 0
+#define EXPERIMENT_12D_TEST3 0
+#define EXPERIMENT_12D_TEST4 0
+#define EXPERIMENT_12D_TEST5 0
+#define EXPERIMENT_12D_TEST6 0
+
 
 //Define buffer size for circular buffer
 #define UART_TX_BUFFER_SIZE 16u
@@ -171,6 +178,7 @@ static bool UART_TX_Push(UartTxBuffer *buffer, uint8_t push_character);
 static bool UART_TX_Pop(UartTxBuffer *buffer, uint8_t *pop_character);
 static bool UART_TX_Peek(const UartTxBuffer *buffer, uint8_t *peek_character);
 static void UART_TX_Service(UartTxBuffer *buffer);
+static size_t UART_TX_PushString(UartTxBuffer *buffer, const char *message);
 static void sensor_update(uint32_t now_original, const SensorConfig *config_original,
 						SensorRuntime *runtime_original, SensorStatsOriginal *stats_original);
 #if EXPERIMENT_9B
@@ -254,6 +262,50 @@ int main(void)
 	UartTxBuffer txBuffer = {0};
 	volatile uint32_t uartDroppedBytes = 0u;
 #endif
+
+#if EXPERIMENT_12D_TEST1
+	//Experiment 12D — Test 1: string transmission
+	UartTxBuffer txBuffer = {0};
+	size_t accepted = UART_TX_PushString(&txBuffer, "STM32");
+#endif
+
+#if EXPERIMENT_12D_TEST2
+	//Experiment 12D — Test 2: Partial insertion
+	UartTxBuffer txBuffer = {0};
+	size_t preLoad = UART_TX_PushString(&txBuffer, "ABCDEFGHIJKLMN");
+	size_t accepted = UART_TX_PushString(&txBuffer, "HELLO");
+#endif
+#if EXPERIMENT_12D_TEST3
+	//Experiment 12D - Test 3: FIFO Wraparound
+	UartTxBuffer txBuffer = {0};
+	uint8_t popped = 0u;
+	size_t enqueue = UART_TX_PushString(&txBuffer, "ABCDEFGHIJKL");
+	for (uint8_t i = 0; i < 10; i++){
+		UART_TX_Pop(&txBuffer, &popped);
+	}
+	size_t accepted = UART_TX_PushString(&txBuffer, "MNOPQR");
+#endif
+
+#if EXPERIMENT_12D_TEST4
+	//Experiment 12D - Test 3: Empty String
+	UartTxBuffer txBuffer = {0};
+	size_t emptyString = UART_TX_PushString(&txBuffer, "");
+#endif
+
+#if EXPERIMENT_12D_TEST5
+	//Experiment 12D - Test 3: Full FIFO
+	UartTxBuffer txBuffer = {0};
+	size_t fullString = UART_TX_PushString(&txBuffer, "ABCDEFGHIJKLMNOP");
+	size_t moreString = UART_TX_PushString(&txBuffer, "STM32");
+#endif
+
+#if EXPERIMENT_12D_TEST6
+	//Experiment 12D - Test 3: Exact Capacity
+	UartTxBuffer txBuffer = {0};
+	size_t halfString = UART_TX_PushString(&txBuffer, "ABCDEFGHIJ");
+	size_t remainingString = UART_TX_PushString(&txBuffer, "KLMNOP");
+#endif
+
 
 #if DEBUG_CLOCK_CONFIG
 	debugClockConfig = RCC_CFGR;
@@ -482,13 +534,8 @@ int main(void)
 			}
 			gpioMeasurementCount++; //Count the total number of processor cycles it considered
 		}
-#if EXPERIMENT_12B_TEST4
-		//Transmit data
-		UART_TX_Service(&txBuffer);
-#endif
-
-#if EXPERIMENT_12C_TEST1
-		//Transmit the enqueued character 'A'
+#if EXPERIMENT_12B_TEST4 || EXPERIMENT_12C_TEST1 || EXPERIMENT_12D_TEST1
+		//Transmitting data
 		UART_TX_Service(&txBuffer);
 #endif
 
@@ -635,6 +682,32 @@ static void UART_TX_Service(UartTxBuffer *buffer){
 
 }
 
+#if EXPERIMENT_12D_TEST1 || EXPERIMENT_12D_TEST2 || EXPERIMENT_12D_TEST3 || EXPERIMENT_12D_TEST4 ||\
+	EXPERIMENT_12D_TEST5 || EXPERIMENT_12D_TEST6
+//Transmitting a string
+static size_t UART_TX_PushString(UartTxBuffer *buffer, const char *message){
+	//1. Check for invalid pointers.
+	if(buffer == NULL || message == NULL){
+		return 0;
+	}
+	size_t numberOfCharsEnqueued = 0u;
+	//2. Read the string one character at a time.
+	//3. Stop when it encounters the null terminator '\0'.
+	while(*message != '\0'){
+
+		//4. Attempt to enqueue each character.
+		//5. Stop if the buffer becomes full.
+		if(!UART_TX_Push(buffer, (uint8_t) (*message))){
+			return numberOfCharsEnqueued;
+		}
+		message++;
+		numberOfCharsEnqueued++;
+
+	}
+	//6. Return the number of characters successfully enqueued.
+	return numberOfCharsEnqueued;
+}
+#endif
 
 //Toggle GPIO output 5
 static void togglePA5(void){
